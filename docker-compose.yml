@@ -1,0 +1,43 @@
+services:
+  mongo:
+    image: mongo:7.0
+    ports: ["127.0.0.1:27017:27017"]
+    volumes: ["mongo-data:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  app:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379
+      BATCH_SIZE: ${BATCH_SIZE:-5}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      JOB_ATTEMPTS: ${JOB_ATTEMPTS:-3}
+      BACKOFF_MS: ${BACKOFF_MS:-1000}
+    depends_on:
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+volumes:
+  mongo-data:
+  redis-data:
